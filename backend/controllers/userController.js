@@ -245,8 +245,17 @@ const forgotPassword = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
+  // Delete any token associated to this user in the DB
+
+  let token = await Token.findOne({ userId: user._id });
+  if (token) {
+    await token.deleteOne();
+  }
+
   // create reset token
   let resetToken = crypto.randomBytes(32).toString("hex") + user._id;
+
+  console.log("token", resetToken);
 
   // hash token
   const hashedToken = crypto
@@ -277,27 +286,47 @@ const forgotPassword = asyncHandler(async (req, res) => {
   <p>Mighty</p>
   `;
 
-  await sendEmail({
-    from: process.env.EMAIL_USERNAME,
-    to: user.email,
-    subject: "Reset your password",
-    text: `Please click on this link to reset your password: ${process.env.FRONTEND_URL.replace(
-      /\/$/,
-      ""
-    )}/reset-password/${token}`,
-  });
-  res.status(200).json({ message: "Email sent successfully" });
+  const subject = "Password Reset Request";
+  const send_to = user.email;
+  const send_from = process.env.EMAIL_USERNAME;
+
+  try {
+    await sendEmail(subject, message, send_to, send_from);
+    res
+      .status(200)
+      .json({ success: true, message: "Email sent successfully!!!" });
+  } catch (error) {
+    res.status(500);
+    throw new Error("Error sending email");
+  }
 });
 
 // reset password
 const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body;
-  const decoded = jwt.verify(token, process.env.SECRET_KEY);
-  const user = await User.findById(decoded._id);
-  if (!user) {
-    res.status(404);
-    throw new Error("User not found");
+  const { password } = req.body;
+  const { resetToken } = req.params;
+
+  // hash and compare the resetToken to the one in the DB
+
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  const token = await Token.findOne({
+    token: hashedToken,
+    expiresAt: { $gt: Date.now() },
+  });
+
+  if (!token) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid reset token" });
   }
+
+  // Find user
+  const user = await User.findOne({ _id: token.userId });
+
   user.password = password;
   await user.save();
   res.status(200).json({ message: "Password updated successfully" });
