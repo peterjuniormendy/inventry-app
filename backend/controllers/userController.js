@@ -116,14 +116,10 @@ const loginUser = asyncHandler(async (req, res) => {
   });
 
   if (user && isMatch) {
-    const { _id, name, email, photo, bio } = user;
+    const { password: pass, ...rest } = user._doc;
+
     res.status(200).json({
-      _id,
-      name,
-      email,
-      photo,
-      bio,
-      token,
+      data: rest,
     });
   } else {
     res.status(401);
